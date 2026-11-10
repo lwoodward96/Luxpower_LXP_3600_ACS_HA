@@ -15,7 +15,7 @@ from homeassistant.config_entries import (
 from homeassistant.const import CONF_HOST, CONF_PORT, CONF_SCAN_INTERVAL
 from homeassistant.core import callback
 
-from .client import LuxClient, LuxError
+from .client import LuxClient, LuxConnectionError, LuxError
 from .const import (
     CONF_DONGLE_SERIAL,
     CONF_INVERTER_SERIAL,
@@ -42,10 +42,11 @@ class LuxConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         errors: dict[str, str] = {}
+        placeholders = {"seen_dongle": "-", "seen_inverter": "-"}
         if user_input is not None:
             user_input[CONF_HOST] = user_input[CONF_HOST].strip()
             for key in (CONF_DONGLE_SERIAL, CONF_INVERTER_SERIAL):
-                user_input[key] = user_input[key].strip().upper()
+                user_input[key] = user_input[key].strip()
                 if len(user_input[key]) != 10 or not user_input[key].isascii():
                     errors[key] = "invalid_serial"
 
@@ -60,8 +61,20 @@ class LuxConfigFlow(ConfigFlow, domain=DOMAIN):
                 )
                 try:
                     await client.read_input(0, 40)
-                except LuxError:
+                except LuxConnectionError:
                     errors["base"] = "cannot_connect"
+                except LuxError:
+                    seen_d, seen_i = client.seen_dongle_serial, client.seen_inverter_serial
+                    placeholders = {
+                        "seen_dongle": seen_d or "-",
+                        "seen_inverter": seen_i or "-",
+                    }
+                    if (seen_d and seen_d != user_input[CONF_DONGLE_SERIAL]) or (
+                        seen_i and seen_i != user_input[CONF_INVERTER_SERIAL]
+                    ):
+                        errors["base"] = "serial_mismatch"
+                    else:
+                        errors["base"] = "no_reply"
                 finally:
                     await client.close()
 
@@ -75,6 +88,7 @@ class LuxConfigFlow(ConfigFlow, domain=DOMAIN):
             step_id="user",
             data_schema=self.add_suggested_values_to_schema(USER_SCHEMA, user_input),
             errors=errors,
+            description_placeholders=placeholders,
         )
 
     @staticmethod

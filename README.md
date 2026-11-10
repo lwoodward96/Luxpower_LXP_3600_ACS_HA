@@ -106,9 +106,12 @@ automation:
 
 ## Troubleshooting
 
-* **"Could not get a reply from the inverter"**: check that the IP is right and
-  that both serials are exactly as printed, and confirm port 8000 is open
-  (`nc -vz <ip> 8000`).
+* **"Could not open a TCP connection"**: the IP or port is wrong, or the dongle is
+  unreachable. Test it with `nc -vz <ip> 8000`.
+* **"The dongle reports different serials"**: copy the serials shown in the
+  message into the form.
+* **"Connected … but the inverter did not reply"**: enable debug logging (below),
+  try again, and look for `TX`/`RX` lines in the log.
 * Enable debug logs to see traffic:
   ```yaml
   logger:

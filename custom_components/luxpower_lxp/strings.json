@@ -13,7 +13,9 @@
       }
     },
     "error": {
-      "cannot_connect": "Could not get a reply from the inverter. Check the IP address, port and both serial numbers.",
+      "cannot_connect": "Could not open a TCP connection to the dongle. Check the IP address and port (8000), and that nothing else is blocking it.",
+      "no_reply": "Connected to the dongle, but the inverter did not reply. Check both serial numbers, then enable debug logging for custom_components.luxpower_lxp and check the log.",
+      "serial_mismatch": "Connected, but the dongle reports different serials: dongle {seen_dongle}, inverter {seen_inverter}. Enter these values and try again.",
       "invalid_serial": "Serial numbers must be exactly 10 characters."
     },
     "abort": {
