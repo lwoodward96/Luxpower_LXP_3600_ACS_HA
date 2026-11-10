@@ -29,6 +29,10 @@ class LuxError(Exception):
     """Communication with the dongle/inverter failed."""
 
 
+class LuxConnectionError(LuxError):
+    """The TCP connection to the dongle could not be opened."""
+
+
 class LuxClient:
     """Keeps one persistent TCP connection to the dongle.
 
@@ -56,6 +60,9 @@ class LuxClient:
         self._reader_task: asyncio.Task | None = None
         self._lock = asyncio.Lock()
         self._pending: dict[tuple[int, int], asyncio.Future[Frame]] = {}
+        # Serials actually seen on the wire, to help diagnose setup problems
+        self.seen_dongle_serial: str | None = None
+        self.seen_inverter_serial: str | None = None
 
     @property
     def connected(self) -> bool:
@@ -69,7 +76,9 @@ class LuxClient:
                 asyncio.open_connection(self.host, self.port), self.timeout
             )
         except (OSError, asyncio.TimeoutError) as err:
-            raise LuxError(f"Cannot connect to {self.host}:{self.port}: {err}") from err
+            raise LuxConnectionError(
+                f"Cannot connect to {self.host}:{self.port}: {err!r}"
+            ) from err
         self._reader_task = asyncio.get_running_loop().create_task(self._read_loop())
         _LOGGER.debug("Connected to dongle %s:%s", self.host, self.port)
 
@@ -112,11 +121,15 @@ class LuxClient:
             await self._drop_connection()
 
     async def _handle(self, raw: bytes) -> None:
+        _LOGGER.debug("RX %s", raw.hex())
         try:
             frame = parse_frame(raw)
         except ProtocolError as err:
             _LOGGER.debug("Ignoring bad frame (%s): %s", err, raw.hex())
             return
+        self.seen_dongle_serial = frame.dongle_serial
+        if frame.inverter_serial and frame.inverter_serial.strip("\x00 "):
+            self.seen_inverter_serial = frame.inverter_serial
         if frame.tcp_function == TCP_HEARTBEAT:
             # Echo heartbeats so the dongle keeps the session alive
             if self._writer:
@@ -137,9 +150,12 @@ class LuxClient:
                     fut: asyncio.Future[Frame] = asyncio.get_running_loop().create_future()
                     self._pending[(function, register)] = fut
                     assert self._writer is not None
+                    _LOGGER.debug("TX %s", packet.hex())
                     self._writer.write(packet)
                     await self._writer.drain()
                     frame = await asyncio.wait_for(fut, self.timeout)
+                except LuxConnectionError:
+                    raise
                 except (OSError, asyncio.TimeoutError, LuxError) as err:
                     last_err = err
                     _LOGGER.debug(

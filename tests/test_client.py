@@ -22,9 +22,9 @@ INVERTER = "3456789012"
 
 def reply(function: int, register: int, body: bytes) -> bytes:
     inner = bytes([1, function]) + INVERTER.encode() + struct.pack("<H", register) + body
-    payload = struct.pack("<H", len(inner)) + inner + struct.pack("<H", crc16_modbus(inner))
+    payload = struct.pack("<H", len(inner) + 2) + inner + struct.pack("<H", crc16_modbus(inner))
     frame_body = bytes([1, 0xC2]) + DONGLE.encode() + payload
-    return b"\xa1\x1a" + struct.pack("<HH", 1, len(frame_body)) + frame_body
+    return b"\xa1\x1a" + struct.pack("<HH", 2, len(frame_body)) + frame_body
 
 
 class FakeDongle:

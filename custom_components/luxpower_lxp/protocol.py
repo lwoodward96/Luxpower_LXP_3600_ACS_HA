@@ -14,7 +14,7 @@ Outer frame (all multi-byte ints little endian):
 
 Translated data payload:
 
-    0  2  data length (bytes after this field, excluding the CRC)
+    0  2  data length (bytes after this field, including the 2 byte CRC)
     2  1  address (0 = request, 1 = reply)
     3  1  device function (3 read hold, 4 read input, 6 write single, 16 write multi)
     4 10  inverter serial, ASCII
@@ -73,7 +73,9 @@ def _translated(
     body: bytes,
 ) -> bytes:
     inner = bytes([0, function]) + _serial(inverter_serial) + struct.pack("<H", register) + body
-    payload = struct.pack("<H", len(inner)) + inner + struct.pack("<H", crc16_modbus(inner))
+    payload = (
+        struct.pack("<H", len(inner) + 2) + inner + struct.pack("<H", crc16_modbus(inner))
+    )
     protocol = 2 if function == FUNC_WRITE_MULTI else 1
     return _wrap(TCP_TRANSLATED_DATA, protocol, dongle_serial, payload)
 
@@ -156,15 +158,13 @@ def parse_frame(raw: bytes) -> Frame:
     if tcp_function != TCP_TRANSLATED_DATA:
         return frame
 
-    payload = raw[18:]
-    if len(payload) < 18:
+    # Like lxp-bridge, trust the outer frame length rather than the inner data
+    # length field: payload = 2 byte data length, inner data, 2 byte CRC.
+    protocol = struct.unpack_from("<H", raw, 2)[0]
+    inner = raw[20:-2]
+    if len(inner) < 14:
         raise ProtocolError("Translated data payload too short")
-    (data_len,) = struct.unpack_from("<H", payload, 0)
-    inner = payload[2 : 2 + data_len]
-    crc_bytes = payload[2 + data_len : 4 + data_len]
-    if len(inner) != data_len or len(crc_bytes) != 2:
-        raise ProtocolError("Truncated translated data payload")
-    if struct.unpack("<H", crc_bytes)[0] != crc16_modbus(inner):
+    if struct.unpack("<H", raw[-2:])[0] != crc16_modbus(inner):
         raise ProtocolError("CRC mismatch")
 
     function = inner[1]
@@ -178,11 +178,12 @@ def parse_frame(raw: bytes) -> Frame:
         return frame
 
     if frame.function in (FUNC_READ_HOLD, FUNC_READ_INPUT):
-        if not body:
-            raise ProtocolError("Read reply without data")
-        n_bytes = body[0]
-        data = body[1 : 1 + n_bytes]
-        if len(data) != n_bytes or n_bytes % 2:
+        # Replies with protocol 2/5 carry a byte count first; protocol 1 does not.
+        if protocol != 1 or (body and body[0] == len(body) - 1):
+            n_bytes, data = (body[0], body[1:]) if body else (0, b"")
+        else:
+            n_bytes, data = len(body), body
+        if not data or len(data) != n_bytes or n_bytes % 2:
             raise ProtocolError("Read reply length mismatch")
         for i in range(n_bytes // 2):
             frame.values[frame.register + i] = struct.unpack_from("<H", data, i * 2)[0]

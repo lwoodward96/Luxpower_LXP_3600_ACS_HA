@@ -23,9 +23,9 @@ INVERTER = "5555555555"
 
 def make_reply(function: int, register: int, body: bytes) -> bytes:
     inner = bytes([1, function]) + INVERTER.encode() + struct.pack("<H", register) + body
-    payload = struct.pack("<H", len(inner)) + inner + struct.pack("<H", crc16_modbus(inner))
+    payload = struct.pack("<H", len(inner) + 2) + inner + struct.pack("<H", crc16_modbus(inner))
     frame_body = bytes([1, 0xC2]) + DONGLE.encode() + payload
-    return b"\xa1\x1a" + struct.pack("<HH", 1, len(frame_body)) + frame_body
+    return b"\xa1\x1a" + struct.pack("<HH", 2, len(frame_body)) + frame_body
 
 
 def test_crc_known_value():
@@ -40,7 +40,7 @@ def test_build_read_hold_layout():
     assert len(pkt) == 38
     assert pkt[6:8] == bytes([1, 0xC2])
     assert pkt[8:18] == DONGLE.encode()
-    assert struct.unpack_from("<H", pkt, 18)[0] == 16  # data length
+    assert struct.unpack_from("<H", pkt, 18)[0] == 18  # data length incl. CRC
     assert pkt[20:22] == bytes([0, FUNC_READ_HOLD])
     assert pkt[22:32] == INVERTER.encode()
     assert pkt[32:36] == bytes([0, 0, 12, 0])
@@ -107,3 +107,57 @@ def test_heartbeat_parses():
     frame = parse_frame(raw)
     assert frame.tcp_function == TCP_HEARTBEAT
     assert frame.dongle_serial == DONGLE
+
+
+# ---- Real frames taken from lxp-bridge's test suite (captured from hardware) --
+
+LXPB_DONGLE = "2222222222"
+LXPB_INVERTER = "5555555555"
+
+
+def test_lxp_bridge_build_read_hold():
+    assert build_read(LXPB_DONGLE, LXPB_INVERTER, FUNC_READ_HOLD, 12, 3) == bytes(
+        [161, 26, 1, 0, 32, 0, 1, 194, *[50] * 10, 18, 0, 0, 3, *[53] * 10, 12, 0, 3, 0, 112, 38]
+    )
+
+
+def test_lxp_bridge_build_read_inputs():
+    assert build_read(LXPB_DONGLE, LXPB_INVERTER, FUNC_READ_INPUT, 0, 40) == bytes(
+        [161, 26, 1, 0, 32, 0, 1, 194, *[50] * 10, 18, 0, 0, 4, *[53] * 10, 0, 0, 40, 0, 42, 132]
+    )
+
+
+def test_lxp_bridge_parse_read_hold_reply():
+    raw = bytes(
+        [161, 26, 2, 0, 37, 0, 1, 194, *[50] * 10, 23, 0, 1, 3, *[53] * 10, 12, 0, 6,
+         22, 6, 20, 5, 16, 57, 93, 135]
+    )
+    frame = parse_frame(raw)
+    assert frame.function == FUNC_READ_HOLD
+    assert frame.inverter_serial == LXPB_INVERTER
+    # time registers: 2022-06-20 05:16:57
+    assert frame.values == {12: 22 | (6 << 8), 13: 20 | (5 << 8), 14: 16 | (57 << 8)}
+
+
+def test_lxp_bridge_parse_read_inputs_reply():
+    raw = bytes([
+        161, 26, 2, 0, 111, 0, 1, 194, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 97, 0, 1, 4, 53, 53,
+        53, 53, 53, 53, 53, 53, 53, 53, 0, 0, 80, 32, 0, 0, 0, 0, 0, 0, 0, 250, 1, 77, 0, 0, 53, 0,
+        0, 0, 0, 0, 0, 128, 13, 0, 0, 114, 9, 0, 16, 132, 0, 142, 19, 0, 0, 198, 13, 202, 5, 232,
+        3, 114, 9, 0, 10, 80, 112, 142, 19, 0, 0, 0, 0, 0, 0, 36, 15, 0, 0, 0, 0, 0, 0, 91, 0, 83,
+        0, 87, 0, 114, 0, 0, 0, 1, 0, 102, 0, 174, 14, 183, 12, 71, 187,
+    ])
+    frame = parse_frame(raw)
+    assert frame.function == FUNC_READ_INPUT
+    assert len(frame.values) == 40
+    assert frame.values[0] == 32  # status
+    assert frame.values[4] == 506  # battery 50.6 V
+    assert frame.values[5] & 0xFF == 77  # SOC
+
+
+def test_protocol1_read_reply_without_length_byte():
+    inner = bytes([1, FUNC_READ_HOLD]) + LXPB_INVERTER.encode() + struct.pack("<HH", 64, 80)
+    payload = struct.pack("<H", len(inner) + 2) + inner + struct.pack("<H", crc16_modbus(inner))
+    body = bytes([1, 0xC2]) + LXPB_DONGLE.encode() + payload
+    raw = b"\xa1\x1a" + struct.pack("<HH", 1, len(body)) + body
+    assert parse_frame(raw).values == {64: 80}
