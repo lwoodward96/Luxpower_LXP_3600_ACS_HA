@@ -1,0 +1,21 @@
+write_holding_register:
+  fields:
+    config_entry_id:
+      required: false
+      selector:
+        config_entry:
+          integration: luxpower_lxp
+    register:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 65535
+          mode: box
+    value:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 65535
+          mode: box

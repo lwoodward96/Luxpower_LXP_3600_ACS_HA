@@ -1,0 +1,12 @@
+{
+  "domain": "luxpower_lxp",
+  "name": "LuxPower LXP 3600 ACS (local)",
+  "codeowners": ["@lwoodward96"],
+  "config_flow": true,
+  "documentation": "https://github.com/lwoodward96/Luxpower_LXP_3600_ACS_HA",
+  "integration_type": "device",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/lwoodward96/Luxpower_LXP_3600_ACS_HA/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}

@@ -1,0 +1,52 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "LuxPower WiFi dongle",
+        "description": "Enter the IP address of the WiFi dongle. The dongle serial is on its sticker; the inverter serial is on the inverter label (both 10 characters).",
+        "data": {
+          "host": "Dongle IP address",
+          "port": "Port",
+          "dongle_serial": "Dongle (datalog) serial",
+          "inverter_serial": "Inverter serial"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not get a reply from the inverter. Check the IP address, port and both serial numbers.",
+      "invalid_serial": "Serial numbers must be exactly 10 characters."
+    },
+    "abort": {
+      "already_configured": "This inverter is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "scan_interval": "Polling interval (seconds)"
+        }
+      }
+    }
+  },
+  "services": {
+    "write_holding_register": {
+      "name": "Write holding register",
+      "description": "Write a raw value to an inverter holding register. Only use this if you know the register map.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Inverter",
+          "description": "Only needed if more than one inverter is configured."
+        },
+        "register": {
+          "name": "Register",
+          "description": "Holding register number."
+        },
+        "value": {
+          "name": "Value",
+          "description": "Raw 16-bit value to write."
+        }
+      }
+    }
+  }
+}
