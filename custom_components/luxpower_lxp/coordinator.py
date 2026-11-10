@@ -71,6 +71,10 @@ class LuxCoordinator(DataUpdateCoordinator[dict[str, dict[int, int]]]):
             self.async_set_updated_data({"input": dict(self._input), "hold": dict(self._hold)})
 
     async def async_write(self, register: int, value: int) -> None:
+        # Skip no-op writes: automations may re-apply settings often, and the
+        # inverter stores settings in non-volatile memory.
+        if self._hold.get(register) == value:
+            return
         try:
             confirmed = await self.client.write_hold(register, value)
         except LuxError as err:

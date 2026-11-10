@@ -33,6 +33,7 @@ class FakeDongle:
         self.hold = {i: 0 for i in range(160)}
         self.heartbeat_echoes = 0
         self.ignore_next = 0
+        self.writes: list[tuple[int, int]] = []
 
     async def handle(self, reader, writer):
         # Send a heartbeat and an unrelated broadcast first, like a real dongle
@@ -63,6 +64,7 @@ class FakeDongle:
                         writer.write(reply(fn | 0x80, reg, b"\x02"))
                     else:
                         self.hold[reg] = val
+                        self.writes.append((reg, val))
                         writer.write(reply(fn, reg, struct.pack("<H", val)))
                 elif fn == FUNC_WRITE_MULTI:
                     (count,) = struct.unpack_from("<H", raw, 34)

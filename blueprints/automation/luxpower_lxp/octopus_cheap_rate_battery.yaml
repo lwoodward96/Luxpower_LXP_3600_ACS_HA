@@ -1,0 +1,227 @@
+blueprint:
+  name: LuxPower - charge on cheap Octopus rate, discharge at peak
+  description: >
+    While the cheap rate is active (e.g. Intelligent Octopus Go off-peak and
+    smart-charge dispatches) the battery charges from the grid and is held
+    (no discharge). Outside the cheap rate, grid charging stops and the battery
+    discharges. All charging and discharging is capped at the power percentage
+    below (percent of the inverter's rated power; 50% of 3.6 kW = 1.8 kW).
+
+
+    The automation uses AC charge time slot 1 (and forced discharge slot 1 if
+    export is enabled) set to 00:00-23:59, and switches charging on and off
+    itself. Any schedule set in those slots in the LuxPower app is overwritten.
+  domain: automation
+  source_url: https://github.com/lwoodward96/Luxpower_LXP_3600_ACS_HA/blob/claude/brave-dijkstra-9t6oir/blueprints/automation/luxpower_lxp/octopus_cheap_rate_battery.yaml
+  input:
+    cheap_sensor:
+      name: Cheap rate sensor
+      description: >
+        Binary sensor that is on while the cheap rate applies. With the Octopus
+        Energy integration use
+        binary_sensor.octopus_energy_<account>_intelligent_dispatching (on during
+        the off-peak window and during planned dispatches).
+      selector:
+        entity:
+          filter:
+            domain: binary_sensor
+    power_percent:
+      name: Charge / discharge power
+      description: Percent of rated power used for all charging and discharging.
+      default: 50
+      selector:
+        number:
+          min: 5
+          max: 100
+          step: 5
+          unit_of_measurement: "%"
+    charge_soc_limit:
+      name: Charge up to
+      description: Grid charging stops at this battery level.
+      default: 100
+      selector:
+        number:
+          min: 10
+          max: 100
+          step: 5
+          unit_of_measurement: "%"
+    export_on_peak:
+      name: Export to grid at peak
+      description: >
+        Off (recommended): at peak the battery only powers your home. On: the
+        battery is force-discharged at the set power and anything your home does
+        not use is exported to the grid.
+      default: false
+      selector:
+        boolean:
+    export_min_soc:
+      name: Stop exporting at
+      description: Forced discharge stops at this battery level (only used when exporting).
+      default: 20
+      selector:
+        number:
+          min: 10
+          max: 100
+          step: 5
+          unit_of_measurement: "%"
+    inverter:
+      name: Inverter entities
+      description: Defaults match the LuxPower LXP 3600 ACS integration; change only if you renamed them.
+      collapsed: true
+      input:
+        ac_charge_switch:
+          name: AC charge switch
+          default: switch.luxpower_lxp_3600_acs_ac_charge
+          selector: { entity: { filter: { domain: switch } } }
+        forced_discharge_switch:
+          name: Forced discharge switch
+          default: switch.luxpower_lxp_3600_acs_forced_discharge
+          selector: { entity: { filter: { domain: switch } } }
+        ac_charge_start:
+          name: AC charge start 1
+          default: time.luxpower_lxp_3600_acs_ac_charge_start_1
+          selector: { entity: { filter: { domain: time } } }
+        ac_charge_end:
+          name: AC charge end 1
+          default: time.luxpower_lxp_3600_acs_ac_charge_end_1
+          selector: { entity: { filter: { domain: time } } }
+        forced_discharge_start:
+          name: Forced discharge start 1
+          default: time.luxpower_lxp_3600_acs_forced_discharge_start_1
+          selector: { entity: { filter: { domain: time } } }
+        forced_discharge_end:
+          name: Forced discharge end 1
+          default: time.luxpower_lxp_3600_acs_forced_discharge_end_1
+          selector: { entity: { filter: { domain: time } } }
+        ac_charge_rate:
+          name: AC charge rate
+          default: number.luxpower_lxp_3600_acs_ac_charge_rate
+          selector: { entity: { filter: { domain: number } } }
+        ac_charge_soc_limit:
+          name: AC charge SOC limit
+          default: number.luxpower_lxp_3600_acs_ac_charge_soc_limit
+          selector: { entity: { filter: { domain: number } } }
+        charge_rate:
+          name: System charge rate
+          default: number.luxpower_lxp_3600_acs_system_charge_rate
+          selector: { entity: { filter: { domain: number } } }
+        discharge_rate:
+          name: System discharge rate
+          default: number.luxpower_lxp_3600_acs_system_discharge_rate
+          selector: { entity: { filter: { domain: number } } }
+        forced_discharge_rate:
+          name: Forced discharge rate
+          default: number.luxpower_lxp_3600_acs_forced_discharge_rate
+          selector: { entity: { filter: { domain: number } } }
+        forced_discharge_soc_limit:
+          name: Forced discharge SOC limit
+          default: number.luxpower_lxp_3600_acs_forced_discharge_soc_limit
+          selector: { entity: { filter: { domain: number } } }
+
+mode: queued
+max: 3
+
+triggers:
+  - trigger: state
+    entity_id: !input cheap_sensor
+    to: ["on", "off"]
+  - trigger: homeassistant
+    event: start
+  # Re-apply periodically in case a write was missed; unchanged values are
+  # not re-written to the inverter.
+  - trigger: time_pattern
+    minutes: "/15"
+
+variables:
+  cheap_sensor: !input cheap_sensor
+  power: !input power_percent
+  soc_limit: !input charge_soc_limit
+  export: !input export_on_peak
+  export_min_soc: !input export_min_soc
+
+conditions:
+  - condition: template
+    value_template: "{{ states(cheap_sensor) in ['on', 'off'] }}"
+
+actions:
+  - if:
+      - condition: template
+        value_template: "{{ is_state(cheap_sensor, 'on') }}"
+    then:
+      # Cheap rate: charge from the grid, hold the battery (no discharge)
+      - action: switch.turn_off
+        target:
+          entity_id: !input forced_discharge_switch
+      - action: time.set_value
+        target:
+          entity_id: !input ac_charge_start
+        data:
+          time: "00:00:00"
+      - action: time.set_value
+        target:
+          entity_id: !input ac_charge_end
+        data:
+          time: "23:59:00"
+      - action: number.set_value
+        target:
+          entity_id:
+            - !input ac_charge_rate
+            - !input charge_rate
+        data:
+          value: "{{ power }}"
+      - action: number.set_value
+        target:
+          entity_id: !input ac_charge_soc_limit
+        data:
+          value: "{{ soc_limit }}"
+      - action: number.set_value
+        target:
+          entity_id: !input discharge_rate
+        data:
+          value: 0
+      - action: switch.turn_on
+        target:
+          entity_id: !input ac_charge_switch
+    else:
+      # Peak rate: stop grid charging, discharge at the capped rate
+      - action: switch.turn_off
+        target:
+          entity_id: !input ac_charge_switch
+      - action: number.set_value
+        target:
+          entity_id:
+            - !input charge_rate
+            - !input discharge_rate
+        data:
+          value: "{{ power }}"
+      - if:
+          - condition: template
+            value_template: "{{ export }}"
+        then:
+          - action: time.set_value
+            target:
+              entity_id: !input forced_discharge_start
+            data:
+              time: "00:00:00"
+          - action: time.set_value
+            target:
+              entity_id: !input forced_discharge_end
+            data:
+              time: "23:59:00"
+          - action: number.set_value
+            target:
+              entity_id: !input forced_discharge_rate
+            data:
+              value: "{{ power }}"
+          - action: number.set_value
+            target:
+              entity_id: !input forced_discharge_soc_limit
+            data:
+              value: "{{ export_min_soc }}"
+          - action: switch.turn_on
+            target:
+              entity_id: !input forced_discharge_switch
+        else:
+          - action: switch.turn_off
+            target:
+              entity_id: !input forced_discharge_switch
