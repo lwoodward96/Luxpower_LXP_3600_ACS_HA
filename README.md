@@ -82,35 +82,6 @@ data:
   value: 50
 ```
 
-## Blueprint: Octopus cheap-rate charging (Intelligent Octopus Go)
-
-[`blueprints/automation/luxpower_lxp/octopus_cheap_rate_battery.yaml`](blueprints/automation/luxpower_lxp/octopus_cheap_rate_battery.yaml)
-
-* **Cheap rate on:** the battery charges from the grid and does not discharge.
-* **Cheap rate off:** grid charging stops and the battery discharges to power
-  your home.
-* **Power cap:** charging and discharging are capped at a percentage of rated
-  power (default **50%**, which is 1.8 kW).
-* **Export (optional, off by default):** force-discharge to the grid at peak,
-  down to a minimum SOC.
-
-**Import:** *Settings → Automations & scenes → Blueprints → Import blueprint*, and
-paste:
-
-```
-https://github.com/lwoodward96/Luxpower_LXP_3600_ACS_HA/blob/claude/brave-dijkstra-9t6oir/blueprints/automation/luxpower_lxp/octopus_cheap_rate_battery.yaml
-```
-
-Then create an automation from it. For the cheap-rate sensor, choose
-`binary_sensor.octopus_energy_<account>_intelligent_dispatching` from the
-[Octopus Energy integration](https://github.com/BottlecapDave/HomeAssistant-OctopusEnergy).
-That sensor is on during the off-peak window and during smart-charge dispatches.
-
-The blueprint sets AC charge slot 1 (and forced discharge slot 1, when export is
-enabled) to 00:00–23:59, and turns charging on and off itself. It overwrites any
-schedule set in those slots in the LuxPower app. It re-applies its settings every
-15 minutes, but values that haven't changed are not rewritten to the inverter.
-
 ## Example automation: charge from the grid overnight
 
 ```yaml
